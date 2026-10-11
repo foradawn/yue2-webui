@@ -1,0 +1,6 @@
+# YuE2 Web UI 运行依赖（Web 层）
+# 推理侧依赖（torch / yue2 / CUDA）由 YuE2 官方环境提供，见 README。
+fastapi>=0.110
+uvicorn>=0.27
+pydantic>=2.6
+python-multipart>=0.0.9

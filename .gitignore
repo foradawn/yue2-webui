@@ -1,0 +1,17 @@
+# 生成产物与上传的参考音频（可能很大，不入库）
+outputs/
+uploads/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 日志与本地状态
+logs/
+*.log
+*.pid
+.env
+.DS_Store

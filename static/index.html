@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>YuE2 · AI 音乐生成</title>
+<style>
+  :root { --bg:#0e1014; --panel:#171a21; --line:#262b35; --text:#e8eaed; --muted:#9aa3b2; --acc:#6ea8fe; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.6 -apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1120px; margin:0 auto; padding:24px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .grid { display:grid; grid-template-columns:1.15fr .85fr; gap:16px; align-items:start; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:13px; letter-spacing:.05em; color:var(--acc); margin:0 0 12px; text-transform:uppercase; }
+  label { display:block; font-size:12px; color:var(--muted); margin:0 0 6px; }
+  textarea, input, select { width:100%; background:#0f1218; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:9px 12px; font:inherit; }
+  textarea { min-height:150px; resize:vertical; }
+  .row { display:flex; gap:12px; margin-top:12px; flex-wrap:wrap; }
+  .row > div { flex:1 1 140px; }
+  .hint { color:var(--muted); font-size:12px; margin-top:6px; }
+  button { background:var(--acc); color:#0b1220; border:0; border-radius:8px; padding:10px 20px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--text); border:1px solid var(--line); font-weight:500; padding:8px 14px; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .seg { display:flex; gap:6px; }
+  .seg label { flex:1; text-align:center; border:1px solid var(--line); border-radius:8px; padding:8px 6px; cursor:pointer; color:var(--muted); font-size:12px; margin:0; }
+  .seg input { position:absolute; opacity:0; pointer-events:none; }
+  .seg label.on { border-color:var(--acc); color:var(--acc); background:rgba(110,168,254,.08); }
+  details { border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-top:12px; }
+  summary { cursor:pointer; color:var(--muted); font-size:13px; }
+  .check { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); margin-top:10px; }
+  audio { width:100%; margin-top:12px; }
+  .err { color:#ff8080; word-break:break-all; }
+  .meta { color:var(--muted); font-size:13px; margin-top:8px; }
+  pre { background:#0f1218; border:1px solid var(--line); border-radius:8px; padding:12px; max-height:260px; overflow:auto; font-size:12px; white-space:pre-wrap; }
+  a { color:var(--acc); }
+  .history { max-height:220px; overflow:auto; font-size:13px; }
+  .history div { padding:6px 0; border-bottom:1px solid var(--line); }
+  .chips{ display:flex; flex-wrap:wrap; gap:6px; margin:2px 0 10px; }
+  .chips label{ display:inline-flex; align-items:center; gap:5px; padding:4px 9px;
+    border:1px solid #2a3140; border-radius:999px; font-size:12px; cursor:pointer; color:#c9d2e0; }
+  .chips label.on{ border-color:#5b8cff; color:#eaf0ff; background:#18233a; }
+  .chips input{ width:auto; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>YuE2 · AI 音乐生成</h1>
+  <p class="sub">风格 + 歌词 → 可编辑乐谱 → 48kHz 立体声歌曲，推理跑在 GPU 上。左侧四组参数，右侧结果与历史。</p>
+
+  <div class="grid">
+    <div>
+      <div class="card">
+        <h2>1 · 创作</h2>
+        <label>歌曲 ID（输出目录名）</label>
+        <input id="songid" value="song" />
+        <label style="margin-top:12px">风格提示：语言、流派、乐器、人声、BPM</label>
+        <input id="style" value="Mandarin, warm piano pop, expressive female vocal, acoustic piano, rounded bass and light drums, 88 BPM" />
+        <details style="margin-top:8px">
+          <summary>风格助手：从词库挑选 / 随机生成（musegen 方法 + 388 个流派词表）</summary>
+          <div class="row">
+            <div>
+              <label>语言</label>
+              <select id="s_lang"></select>
+            </div>
+            <div>
+              <label>流派</label>
+              <select id="s_genre"></select>
+            </div>
+            <div>
+              <label>情绪</label>
+              <select id="s_mood"></select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>人声</label>
+              <select id="s_vocal"></select>
+            </div>
+            <div>
+              <label>演唱方式</label>
+              <select id="s_delivery"></select>
+            </div>
+            <div>
+              <label>混音位置</label>
+              <select id="s_placement"></select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>制作 / 空间</label>
+              <select id="s_prod"></select>
+            </div>
+            <div>
+              <label>律动</label>
+              <select id="s_groove"></select>
+            </div>
+            <div style="flex:0 0 130px">
+              <label>BPM</label>
+              <input id="s_bpm" type="number" placeholder="按流派" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>段落走向</label>
+              <select id="s_structure"></select>
+            </div>
+            <div>
+              <label>篇幅</label>
+              <select id="s_length"></select>
+            </div>
+            <div>
+              <label>调性 / 和声</label>
+              <select id="s_key"></select>
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>年代质感</label>
+              <select id="s_era"></select>
+            </div>
+            <div style="flex:2 1 220px">
+              <label>用途场景（套用该场景的成熟模板）</label>
+              <select id="s_usecase"></select>
+            </div>
+          </div>
+          <label>乐器 / 制作标签（可编辑，逗号分隔）</label>
+          <input id="s_tags" placeholder="如 guzheng, taiko drums, vinyl crackle" />
+          <label>排除项（可多选）</label>
+          <div class="chips" id="s_neg"></div>
+          <label class="check"><input id="s_ins" type="checkbox" style="width:auto" /> 纯器乐（自动追加 no vocals 三重否定）</label>
+          <div class="row">
+            <button class="ghost" id="s_build" type="button">生成风格</button>
+            <button class="ghost" id="s_random" type="button">随机灵感</button>
+            <button class="ghost" id="s_shuffle" type="button">换一批随机</button>
+          </div>
+          <label style="margin-top:10px">预设库（musegen 精选提示）</label>
+          <div class="row">
+            <select id="s_preset" style="flex:2 1 220px"></select>
+            <button class="ghost" id="s_usepreset" type="button">使用预设</button>
+          </div>
+          <textarea id="s_out" style="min-height:70px" placeholder="生成的风格会显示在这里，再点“填入风格框”"></textarea>
+          <div class="row">
+            <button class="ghost" id="s_fill" type="button">填入风格框</button>
+            <div class="meta" id="s_check"></div>
+          </div>
+        </details>
+        <label style="margin-top:12px">歌词（用 [Verse] / [Chorus] 分段）</label>
+        <textarea id="lyrics">[Verse]
+晚风轻轻吹过窗前
+你留下的笑还在昨天
+[Chorus]
+让这首歌陪你走远
+把所有想念唱成明天</textarea>
+      </div>
+
+      <div class="card">
+        <h2>2 · 规划与随机性</h2>
+        <label>符号规划模式 cot</label>
+        <div class="seg" id="cot">
+          <label class="on"><input type="radio" name="cot" value="full" checked />full（旋律+和声）</label>
+          <label><input type="radio" name="cot" value="melody" />melody（仅旋律）</label>
+          <label><input type="radio" name="cot" value="off" />off（无乐谱）</label>
+        </div>
+        <div class="hint">换风格翻唱用 melody；保留原和声用 full；off 不产出乐谱。</div>
+        <div class="row">
+          <div>
+            <label>随机种子</label>
+            <input id="seed" type="number" value="42" />
+          </div>
+          <div style="flex:0 0 auto; display:flex; align-items:flex-end">
+            <button class="ghost" id="randseed" type="button">随机种子</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>3 · 乐谱 / 翻唱（可选）</h2>
+        <label>参考音频（翻唱：上传原曲，自动转录成旋律谱）</label>
+        <div class="row" style="margin-top:0">
+          <input id="audio" type="file" accept="audio/*,.wav,.mp3,.flac,.m4a,.ogg" style="flex:2 1 220px" />
+          <button class="ghost" id="transcribebtn" type="button">转录为旋律谱</button>
+        </div>
+        <div class="hint" id="tstatus">需 SheetSage2 环境；转录与生成共用一张 GPU，会串行排队。</div>
+        <label style="margin-top:14px">自定义 ABC 乐谱（需 full 或 melody）</label>
+        <textarea id="abc" style="min-height:120px" placeholder="留空则让 YuE2 自动作曲；粘贴 SheetSage2 转录的旋律谱即可翻唱"></textarea>
+        <div class="row">
+          <button class="ghost" id="loadmelody" type="button">载入内置示例旋律</button>
+          <button class="ghost" id="clearabc" type="button">清空乐谱</button>
+          <button class="ghost" id="uploadbtn" type="button">上传 .abc/.txt</button>
+          <input id="file" type="file" accept=".abc,.txt" style="display:none" />
+        </div>
+        <label class="check"><input id="instrumental" type="checkbox" style="width:auto" /> 乐器版：把 Vocal 旋律移到 Ins 声部（无人声伴奏）</label>
+
+        <details>
+          <summary>4 · 高级参数（解码 / 引导 / 显存）</summary>
+          <div class="row">
+            <div>
+              <label>cfg_scale（文本引导，留空=默认）</label>
+              <input id="cfg" type="number" step="0.05" placeholder="默认 1.0" />
+            </div>
+            <div>
+              <label>音频解码器 VAE</label>
+              <select id="vae">
+                <option value="standard">standard（听感最佳）</option>
+                <option value="legacy">legacy（复现论文指标）</option>
+              </select>
+            </div>
+            <div>
+              <label>显存预算 GiB</label>
+              <input id="budget" type="number" value="24" step="1" />
+            </div>
+          </div>
+          <label class="check"><input id="planonly" type="checkbox" style="width:auto" /> 只生成乐谱（不渲染音频，秒级出谱，可反复改）</label>
+          <div class="hint">切换 VAE、预算或采样参数会重建流水线并重新加载权重（约 20-30 秒）。</div>
+        </details>
+
+        <details>
+          <summary>5 · 采样与合成（实验性，留空=官方默认）</summary>
+          <div class="row">
+            <div>
+              <label>规划 temperature（默认 0.7）</label>
+              <input id="abc_temp" type="number" step="0.05" />
+            </div>
+            <div>
+              <label>规划 top_p（默认 0.9）</label>
+              <input id="abc_topp" type="number" step="0.05" />
+            </div>
+            <div>
+              <label>规划 max_tokens（默认 4096）</label>
+              <input id="abc_max" type="number" step="128" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>语义 temperature（默认 1.0）</label>
+              <input id="sem_temp" type="number" step="0.05" />
+            </div>
+            <div>
+              <label>语义 top_p（默认 0.95）</label>
+              <input id="sem_topp" type="number" step="0.05" />
+            </div>
+            <div>
+              <label>语义 max_tokens（默认 9000，间接限制歌曲长度）</label>
+              <input id="sem_max" type="number" step="256" />
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>ODE 步数（默认 32，越大越慢/略稳）</label>
+              <input id="ode" type="number" step="4" />
+            </div>
+            <div>
+              <label>推理后端</label>
+              <select id="backend">
+                <option value="torch">torch（CUDA Graph，最快）</option>
+                <option value="torch-eager">torch-eager（关闭图，便于调试）</option>
+              </select>
+            </div>
+            <div>
+              <label>模型 revision（留空=最新）</label>
+              <input id="revision" placeholder="commit hash" />
+            </div>
+          </div>
+          <label class="check"><input id="offload" type="checkbox" style="width:auto" /> offload_ar：合成阶段把 AR 权重卸载到 CPU（省显存，更慢）</label>
+          <div class="hint">FP8 量化需要计算能力 8.9+ 的 GPU（A 卡 8.6 不支持），本页不提供该开关。</div>
+        </details>
+      </div>
+
+      <div class="card">
+        <div class="row" style="margin-top:0">
+          <button id="go">生成歌曲</button>
+          <button class="ghost" id="stop" type="button" disabled>停止生成</button>
+          <div class="meta" id="gpu" style="align-self:center"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <h2>结果</h2>
+        <div class="meta" id="status">等待提交…</div>
+        <div id="player"></div>
+        <div class="err" id="err"></div>
+        <div class="meta" id="links"></div>
+      </div>
+      <div class="card">
+        <h2>乐谱 score.abc（可编辑后再生成）</h2>
+        <pre id="score">—</pre>
+      </div>
+      <div class="card">
+        <h2>历史（最近 20 条）</h2>
+        <div class="history" id="history"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let timer = null;
+
+document.querySelectorAll('#cot input').forEach(el => {
+  el.addEventListener('change', () => {
+    document.querySelectorAll('#cot label').forEach(l => l.classList.remove('on'));
+    el.closest('label').classList.add('on');
+  });
+});
+
+async function loadDevice() {
+  const r = await fetch('/api/device').then(x => x.json());
+  $('gpu').textContent = r.gpu.available
+    ? `GPU ${r.gpu.name} · ${r.gpu.memory_gib}GiB · torch ${r.gpu.torch} · VAE ${r.loaded_vae || '未加载'}`
+    : '未检测到 GPU';
+}
+
+async function loadHistory() {
+  const rows = await fetch('/api/jobs').then(x => x.json());
+  $('history').innerHTML = rows.length ? rows.map(r => {
+    const name = r.status === 'complete'
+      ? `<a href="${r.audio}" target="_blank">${(r.lyrics_head || '')} · ${(r.audio_seconds || 0).toFixed(1)}s</a>`
+      : `${(r.lyrics_head || '')} · ${r.status}`;
+    return `<div>${name}</div>`;
+  }).join('') : '<div class="meta">暂无记录</div>';
+}
+
+async function poll(id) {
+  const job = await fetch('/api/job/' + id).then(x => x.json());
+  if (job.status === 'running') {
+    $('status').textContent = `生成中… ${job.stage} ${job.phase || ''} · 已输出 ${job.tokens} tokens`;
+    timer = setTimeout(() => poll(id), 1500);
+    return;
+  }
+  clearTimeout(timer);
+  $('go').disabled = false;
+  $('stop').disabled = true;
+  if (job.status === 'failed') {
+    $('status').textContent = '生成失败';
+    $('err').textContent = job.error || '';
+    loadHistory();
+    return;
+  }
+  if (job.plan_only) {
+    $('status').textContent = `乐谱已生成 · 耗时 ${job.seconds}s${job.truncated && job.truncated.abc ? ' · 被截断' : ''}`;
+    $('links').innerHTML = `<a href="/outputs/${job.id}/score.abc" target="_blank">打开 score.abc</a> · 复制后可粘回第 3 组继续渲染音频`;
+    $('score').textContent = job.abc || '—';
+    loadHistory();
+    return;
+  }
+  $('status').textContent = `完成 · 时长 ${job.audio_seconds.toFixed(1)}s · 耗时 ${job.seconds}s · 截断 ${JSON.stringify(job.truncated)}`;
+  $('player').innerHTML = `<audio controls src="${job.audio}"></audio>`;
+  $('links').innerHTML = `<a href="${job.flac}" download>下载 FLAC</a> · <a href="${job.audio}" download>下载 WAV</a> · <a href="/outputs/${job.id}/result.json" target="_blank">result.json</a>`;
+  if (job.score) {
+    $('score').textContent = await fetch(job.score).then(x => x.text());
+  } else {
+    $('score').textContent = '（cot=off 时不产生乐谱）';
+  }
+  loadHistory();
+}
+
+let currentJob = null;
+const num = (id) => ($(id).value === '' ? null : Number($(id).value));
+
+// ---------- 风格助手 ----------
+let styleFields = null;
+const opt = (o) => `<option value="${o.value}">${o.label}${o.value && o.label !== o.value ? `（${o.value}）` : ''}</option>`;
+const fillSelect = (el, items, first = '（不指定）') => {
+  el.innerHTML = [`<option value="">${first}</option>`].concat(items.map(opt)).join('');
+};
+const showCheck = (c) => {
+  $('s_check').textContent = c
+    ? `${c.chars} 字符${c.within_limit ? '' : '（超出 180 上限）'} · ${c.has_bpm ? '含 BPM' : '缺 BPM'} · ${c.has_language ? '含语言' : '缺语言前缀'}`
+      + (c.bad_words.length ? ` · 含禁用词 ${c.bad_words.join('/')}` : '')
+    : '';
+};
+const putStyle = (d) => { $('s_out').value = d.style; showCheck(d.check); };
+
+async function loadStyleFields() {
+  if (styleFields) return styleFields;
+  styleFields = await fetch('/api/style/fields').then(r => r.json());
+  const f = styleFields;
+  fillSelect($('s_lang'), f.languages.map(l => ({ value: l.value, label: l.label })), '随机');
+  fillSelect($('s_genre'), f.genres.map(g => ({ value: g.name, label: g.label || g.name })), '随机');
+  fillSelect($('s_mood'), f.moods.map(m => ({
+    value: (m.name || '').toLowerCase(),
+    label: `${m.label || m.name} → ${m.signature || ''}`,
+  })));
+  fillSelect($('s_vocal'), norm(f.vocals.types), '随机');
+  fillSelect($('s_delivery'), norm(f.vocals.delivery));
+  fillSelect($('s_placement'), norm(f.vocals.placement));
+  fillSelect($('s_prod'), norm(f.production));
+  fillSelect($('s_groove'), norm(f.groove));
+  fillSelect($('s_structure'), norm(f.structure));
+  fillSelect($('s_length'), norm(f.length));
+  fillSelect($('s_key'), norm(f.keys));
+  fillSelect($('s_era'), norm(f.eras));
+  fillSelect($('s_usecase'), (f.usecases || []).map(u => ({ value: u.name, label: u.label || u.name })));
+  $('s_neg').innerHTML = norm(f.negatives).map(n =>
+    `<label><input type="checkbox" value="${n.value}" />${n.label}</label>`).join('');
+  $('s_neg').querySelectorAll('input').forEach(cb => {
+    cb.onchange = () => cb.closest('label').classList.toggle('on', cb.checked);
+  });
+  $('s_preset').innerHTML = f.presets.map((p, i) => `<option value="${i}">${p.label || p.name}</option>`).join('');
+  return f;
+}
+const norm = (list) => (list || []).map(v => (typeof v === 'string' ? { value: v, label: v } : v));
+const pickedNegatives = () => [...$('s_neg').querySelectorAll('input:checked')].map(i => i.value);
+loadStyleFields().catch(() => { $('s_check').textContent = '风格词库加载失败'; });
+
+$('s_genre').onchange = () => {
+  const g = (styleFields?.genres || []).find(x => x.name === $('s_genre').value);
+  if (!g) return;
+  $('s_tags').value = g.tags.slice(0, 3).join(', ');
+  if (!$('s_bpm').value) $('s_bpm').placeholder = `按流派 ${g.bpm[0]}-${g.bpm[1]}`;
+};
+$('s_usepreset').onclick = async () => {
+  await loadStyleFields();
+  putStyle({ style: styleFields.presets[Number($('s_preset').value)].style, check: null });
+  const r = await fetch('/api/style/check?style=' + encodeURIComponent($('s_out').value), { method: 'POST' });
+  showCheck(await r.json());
+};
+$('s_usecase').onchange = () => {
+  const u = (styleFields?.usecases || []).find(x => x.name === $('s_usecase').value);
+  if (!u) return;
+  const tags = u.style.split(',').map(s => s.trim()).filter(t => !/BPM$/.test(t));
+  $('s_tags').value = tags.slice(2).join(', ');
+  $('s_out').value = u.style;
+  showCheck(null);
+};
+$('s_build').onclick = async () => {
+  await loadStyleFields();
+  const body = {
+    language: $('s_lang').value || 'Mandarin',
+    genre: $('s_genre').value || null,
+    mood: $('s_mood').value || null,
+    vocal: $('s_vocal').value || null,
+    tags: $('s_tags').value.split(',').map(s => s.trim()).filter(Boolean),
+    bpm: $('s_bpm').value === '' ? null : Number($('s_bpm').value),
+    production: $('s_prod').value || null,
+    instrumental: $('s_ins').checked,
+    groove: $('s_groove').value || null,
+    structure: $('s_structure').value || null,
+    length: $('s_length').value || null,
+    key: $('s_key').value || null,
+    era: $('s_era').value || null,
+    placement: $('s_placement').value || null,
+    delivery: $('s_delivery').value || null,
+    negatives: pickedNegatives(),
+  };
+  putStyle(await fetch('/api/style/build', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()));
+};
+$('s_random').onclick = async () => {
+  await loadStyleFields();
+  const q = new URLSearchParams({ seed: String(Math.floor(Math.random() * 100000)) });
+  if ($('s_genre').value) q.set('genre', $('s_genre').value);
+  if ($('s_lang').value) q.set('language', $('s_lang').value);
+  if ($('s_ins').checked) q.set('instrumental', 'true');
+  putStyle(await fetch('/api/style/random?' + q).then(r => r.json()));
+};
+$('s_shuffle').onclick = () => $('s_random').onclick();
+$('s_fill').onclick = () => { if ($('s_out').value) $('style').value = $('s_out').value; };
+
+$('stop').onclick = async () => {
+  if (!currentJob) return;
+  await fetch('/api/cancel/' + currentJob, { method: 'POST' });
+  $('status').textContent = '已请求停止，等待当前阶段退出…';
+};
+
+$('go').onclick = async () => {
+  $('go').disabled = true;
+  $('stop').disabled = false;
+  $('err').textContent = '';
+  $('player').innerHTML = '';
+  $('links').innerHTML = '';
+  $('score').textContent = '—';
+  $('status').textContent = '排队中…';
+  const body = {
+    id: $('songid').value || 'song',
+    style: $('style').value,
+    lyrics: $('lyrics').value,
+    cot: document.querySelector('#cot input:checked').value,
+    seed: Number($('seed').value),
+    abc: $('abc').value || null,
+    cfg_scale: num('cfg'),
+    vae: $('vae').value,
+    budget: Number($('budget').value),
+    instrumental: $('instrumental').checked,
+    stage: $('planonly').checked ? 'plan' : 'audio',
+    abc_temperature: num('abc_temp'),
+    abc_top_p: num('abc_topp'),
+    abc_max_tokens: num('abc_max'),
+    semantic_temperature: num('sem_temp'),
+    semantic_top_p: num('sem_topp'),
+    semantic_max_tokens: num('sem_max'),
+    ode_steps: num('ode'),
+    backend: $('backend').value,
+    offload_ar: $('offload').checked,
+    revision: $('revision').value || null,
+  };
+  const res = await fetch('/api/generate', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    $('status').textContent = '提交失败';
+    $('err').textContent = d.detail || String(res.status);
+    $('go').disabled = false;
+    return;
+  }
+  const { job_id } = await res.json();
+  currentJob = job_id;
+  poll(job_id);
+};
+
+async function pollTranscribe(id) {
+  const job = await fetch('/api/transcribe/' + id).then(x => x.json());
+  if (job.status === 'running') {
+    $('tstatus').textContent = `转录中… ${job.stage}`;
+    setTimeout(() => pollTranscribe(id), 2000);
+    return;
+  }
+  $('transcribebtn').disabled = false;
+  if (job.status === 'failed') {
+    $('tstatus').textContent = '转录失败：' + (job.error || '');
+    return;
+  }
+  $('abc').value = job.abc;
+  $('tstatus').textContent = `转录完成，乐谱已填入下方；请核对音符后选择 melody 模式并填写新风格。`;
+}
+
+$('transcribebtn').onclick = async () => {
+  const f = $('audio').files[0];
+  if (!f) { $('tstatus').textContent = '请先选择参考音频文件'; return; }
+  $('transcribebtn').disabled = true;
+  $('tstatus').textContent = `上传 ${f.name} …`;
+  const form = new FormData();
+  form.append('file', f);
+  const res = await fetch('/api/transcribe', { method: 'POST', body: form });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    $('tstatus').textContent = '提交失败：' + (d.detail || res.status);
+    $('transcribebtn').disabled = false;
+    return;
+  }
+  const { job_id } = await res.json();
+  $('tstatus').textContent = '转录中… queue';
+  pollTranscribe(job_id);
+};
+
+$('randseed').onclick = () => { $('seed').value = Math.floor(Math.random() * 1e9); };
+$('loadmelody').onclick = async () => {
+  const d = await fetch('/api/example/melody.abc').then(x => x.json());
+  $('abc').value = d.abc;
+};
+$('clearabc').onclick = () => { $('abc').value = ''; };
+$('uploadbtn').onclick = () => $('file').click();
+$('file').onchange = async () => {
+  const f = $('file').files[0];
+  if (f) $('abc').value = await f.text();
+};
+
+loadDevice();
+loadHistory();
+</script>
+</body>
+</html>

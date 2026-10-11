@@ -15,11 +15,14 @@
 ```
 app.py                 后端：流水线缓存、生成任务、转谱、风格助手接口
 static/index.html      单页前端
-data/style_lexicon.json 风格助手词库
+scripts/               风格助手脚本（随仓库附带，无需额外安装 skill）
+data/                  风格词库 style_lexicon.json + 中文标签 zh_terms.json
 start_webui.sh         一键启动（幂等，已运行则直接返回）
 restart_webui.sh       停止旧进程并重新拉起
 outputs/, uploads/     运行产物（已 gitignore）
 ```
+
+换机器部署见 [DEPLOY.md](DEPLOY.md)。
 
 ## 环境依赖
 

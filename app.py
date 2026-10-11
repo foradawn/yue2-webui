@@ -28,8 +28,13 @@ OUTPUTS.mkdir(parents=True, exist_ok=True)
 UPLOADS = ROOT / "uploads"
 UPLOADS.mkdir(parents=True, exist_ok=True)
 STATIC = ROOT / "static"
-REPO = Path("/workspace/YuE")
-STYLE_SKILL = Path("/workspace/.codebuddy/skills/music-style-designer")
+# 可通过环境变量改写，便于部署到别的机器
+REPO = Path(os.environ.get("YUE2_REPO", "/workspace/YuE"))
+STYLE_SKILL = Path(os.environ.get(
+    "YUE2_STYLE_SKILL", str(Path.home() / ".codebuddy/skills/music-style-designer")))
+# 仓库自带的风格助手副本：新机器上即使没装 skill 也能用风格助手
+FORGE_SCRIPT = ROOT / "scripts" / "style_forge.py"
+FORGE_LEXICON = ROOT / "data" / "style_lexicon.json"
 
 SHEETSAGE_PY = REPO / ".venv-sheetsage2/bin/python"
 SHEETSAGE_INFER = REPO / "models/SheetSage2/infer.py"
@@ -321,11 +326,15 @@ def example(name: str):
 
 # ---------- 风格助手（music-style-designer skill） ----------
 def _style_forge():
-    """懒加载 style_forge 模块（纯标准库，不占显存）。"""
+    """懒加载 style_forge 模块（纯标准库，不占显存）。优先用 skill，回落到仓库自带副本。"""
     if _state.get("forge") is None:
         import importlib.util
 
         path = STYLE_SKILL / "scripts" / "style_forge.py"
+        if not path.is_file():
+            path = FORGE_SCRIPT
+        if not path.is_file():
+            raise HTTPException(503, "风格助手不可用：缺少 scripts/style_forge.py")
         spec = importlib.util.spec_from_file_location("style_forge", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
@@ -333,11 +342,17 @@ def _style_forge():
     return _state["forge"]
 
 
+def _lexicon():
+    """词库路径同样优先 skill，再回落仓库内 data/。"""
+    path = STYLE_SKILL / "data" / "style_lexicon.json"
+    return _style_forge().load_lexicon(path if path.is_file() else FORGE_LEXICON)
+
+
 @app.get("/api/style/fields")
 def style_fields():
     """下拉选项：语言 / 流派 / 情绪 / 人声 / 制作 / 负向约束 / 规则。"""
     forge = _style_forge()
-    lex = forge.load_lexicon(STYLE_SKILL / "data" / "style_lexicon.json")
+    lex = _lexicon()
     return {
         "languages": lex["languages"],
         "genres": [{"name": g["name"], "label": g.get("label") or g["name"],
@@ -381,7 +396,7 @@ class StyleBuild(BaseModel):
 @app.post("/api/style/build")
 def style_build(req: StyleBuild):
     forge = _style_forge()
-    lex = forge.load_lexicon(STYLE_SKILL / "data" / "style_lexicon.json")
+    lex = _lexicon()
     style = forge.build_style(
         lex, language=req.language, genre=req.genre, mood=req.mood or None,
         vocal=req.vocal or None, tags=req.tags or None, bpm=req.bpm,
@@ -399,7 +414,7 @@ def style_random(seed: int | None = None, genre: str | None = None,
                  mood: str | None = None, language: str | None = None,
                  instrumental: bool = False):
     forge = _style_forge()
-    lex = forge.load_lexicon(STYLE_SKILL / "data" / "style_lexicon.json")
+    lex = _lexicon()
     style = forge.random_style(lex, seed=seed, genre=genre, mood=mood,
                                language=language, instrumental=instrumental)
     return {"style": style, "check": forge.check_style(lex, style)}
@@ -408,7 +423,7 @@ def style_random(seed: int | None = None, genre: str | None = None,
 @app.post("/api/style/check")
 def style_check(style: str = Query("", description="待检查的风格文本")):
     forge = _style_forge()
-    lex = forge.load_lexicon(STYLE_SKILL / "data" / "style_lexicon.json")
+    lex = _lexicon()
     return forge.check_style(lex, style)
 
 
